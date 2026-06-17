@@ -4,12 +4,13 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus, MessageSquare, Search, ChevronLeft,
-  Sparkles, ArrowUp, CheckCircle2, Circle, Zap, Square
+  Sparkles, ArrowUp, CheckCircle2, Circle, Zap, Square,
+  Paperclip, X, Download
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-type Message = { id: string; role: "user" | "ai"; content: string; };
+type Message = { id: string; role: "user" | "ai"; content: string; image?: string; };
 type Conversation = { id: string; title: string; };
 type AgentName = "Clarity" | "Research" | "Validator" | "Synthesis";
 
@@ -175,6 +176,9 @@ function MessageBubble({
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex justify-end">
         <div className="flex items-end gap-2.5 max-w-[78%]">
           <div className="bg-violet-600 text-white rounded-2xl rounded-br-sm px-4 py-3 text-sm leading-relaxed shadow-sm">
+            {msg.image && (
+              <img src={msg.image} alt="User upload" className="max-w-[200px] mb-2 rounded-xl" />
+            )}
             {msg.content}
           </div>
           <div className="flex-shrink-0 mb-0.5">
@@ -197,7 +201,15 @@ function MessageBubble({
           <MarkdownBody content={msg.content} />
         )}
         {!typewriterQueue && msg.content.trim() && (
-          <div className="flex justify-end mt-3 pt-3 border-t border-zinc-50">
+          <div className="flex justify-end gap-2 mt-3 pt-3 border-t border-zinc-50 print:hidden">
+            <button
+              onClick={() => window.print()}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-zinc-400 hover:text-zinc-600 hover:bg-zinc-50 transition-all"
+              aria-label="Download PDF"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download PDF</span>
+            </button>
             <button
               onClick={handleCopy}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-zinc-400 hover:text-zinc-600 hover:bg-zinc-50 transition-all"
@@ -242,7 +254,7 @@ const Sidebar = ({ conversations, activeId, onSelect, onNew, isOpen, activeAgent
     initial={false}
     animate={{ width: isOpen ? 240 : 0 }}
     transition={{ type: "spring", stiffness: 340, damping: 34 }}
-    className="relative flex-shrink-0 overflow-hidden border-r border-zinc-100 bg-zinc-50"
+    className="relative flex-shrink-0 overflow-hidden border-r border-zinc-100 bg-zinc-50 print:hidden"
   >
     <div className="flex flex-col h-full w-[240px]">
       <div className="flex items-center gap-3 px-5 py-5 border-b border-zinc-100">
@@ -312,6 +324,7 @@ export default function ModernChatDashboard() {
   const [input,          setInput]          = useState("");
   const [isLoading,      setIsLoading]      = useState(false);   // agents running, no text yet
   const [isStreaming,    setIsStreaming]     = useState(false);   // synthesis text arriving
+  const [attachment,     setAttachment]     = useState<string | null>(null);
   const [activeAgentIndex, setActiveAgentIndex] = useState(-1);
   const [currentLabel,   setCurrentLabel]   = useState("Initializing agents…");
   // Once the typewriter has printed its first character we hide the thinking indicator
@@ -324,6 +337,7 @@ export default function ModernChatDashboard() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef      = useRef<HTMLDivElement>(null);
   const inputRef            = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef        = useRef<HTMLInputElement>(null);
   const currentQueryRef     = useRef<string>("");
   const labelCacheRef       = useRef<Record<string, string>>({});
 
@@ -393,6 +407,31 @@ export default function ModernChatDashboard() {
     typewriterQueueRef.current = "";
   }, []);
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => setAttachment(event.target?.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (event) => setAttachment(event.target?.result as string);
+          reader.readAsDataURL(file);
+        }
+        break; // Only handle the first image
+      }
+    }
+  }, []);
+
   const handleStop = (e?: React.MouseEvent) => {
     e?.preventDefault();
     if (abortControllerRef.current) {
@@ -411,7 +450,9 @@ export default function ModernChatDashboard() {
 
     const userText = input.trim();
     currentQueryRef.current = userText;
+    const currentAttachment = attachment;
     setInput("");
+    setAttachment(null);
     if (inputRef.current) inputRef.current.style.height = "auto";
 
     labelCacheRef.current     = {};
@@ -435,7 +476,7 @@ export default function ModernChatDashboard() {
       ...prev,
       [currentThreadId as string]: [
         ...(prev[currentThreadId as string] || []),
-        { id: uid(), role: "user",  content: userText },
+        { id: uid(), role: "user",  content: userText, image: currentAttachment || undefined },
         { id: aiMessageId, role: "ai", content: "" },
       ],
     }));
@@ -454,7 +495,7 @@ export default function ModernChatDashboard() {
       const res = await fetch("/api/chat", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ threadId: currentThreadId, message: userText }),
+        body:    JSON.stringify({ threadId: currentThreadId, message: userText, image: currentAttachment }),
         signal:  abortControllerRef.current.signal,
       });
 
@@ -581,7 +622,7 @@ export default function ModernChatDashboard() {
         activeAgentIndex={showThinking ? activeAgentIndex : -1}
       />
       <div className="flex flex-col flex-1 min-w-0">
-        <header className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-200 bg-white z-10">
+        <header className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-200 bg-white z-10 print:hidden">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setSidebarOpen((o) => !o)}
@@ -650,14 +691,39 @@ export default function ModernChatDashboard() {
           </div>
         </main>
 
-        <footer className="px-6 md:px-10 py-5 border-t border-zinc-200 bg-white">
+        <footer className="px-6 md:px-10 py-5 border-t border-zinc-200 bg-white print:hidden">
           <div className="max-w-3xl mx-auto">
+            {attachment && (
+              <div className="mb-3 relative inline-block transition-all">
+                <img src={attachment} alt="Attachment" className="h-16 rounded shadow-sm border border-zinc-200" />
+                <button
+                  type="button"
+                  onClick={() => setAttachment(null)}
+                  className="absolute -top-2 -right-2 bg-white text-zinc-600 rounded-full border border-zinc-200 shadow-sm p-0.5 hover:text-red-500"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
             <form
               id="chat-form"
               onSubmit={handleSubmit}
               className="flex items-start bg-zinc-50 border border-zinc-300 rounded-2xl px-4 py-3 gap-3 focus-within:border-violet-400 focus-within:ring-2 focus-within:ring-violet-100 transition-all shadow-sm"
             >
-              <Search className="w-4 h-4 text-zinc-400 flex-shrink-0 mt-[11px]" />
+              <input 
+                type="file" 
+                accept="image/*" 
+                className="hidden" 
+                ref={fileInputRef} 
+                onChange={handleFileSelect} 
+              />
+              <button 
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="w-8 h-8 rounded-full hover:bg-zinc-200 flex items-center justify-center text-zinc-400 hover:text-zinc-600 transition-colors flex-shrink-0 mt-[7px]"
+              >
+                <Paperclip className="w-4 h-4" />
+              </button>
               <textarea
                 ref={inputRef}
                 value={input}
@@ -672,6 +738,7 @@ export default function ModernChatDashboard() {
                     (document.getElementById("chat-form") as HTMLFormElement)?.requestSubmit();
                   }
                 }}
+                onPaste={handlePaste}
                 placeholder="Enter a company name or business question… "
                 className="flex-1 bg-transparent text-sm text-zinc-800 placeholder:text-zinc-500 outline-none resize-none leading-relaxed overflow-y-auto"
                 style={{ minHeight: "48px", maxHeight: "160px" }}

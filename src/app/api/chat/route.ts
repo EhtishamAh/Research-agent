@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { threadId, message } = body;
+    const { threadId, message, image } = body;
 
     if (!threadId || !message) {
       return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
@@ -28,11 +28,21 @@ export async function POST(req: Request) {
       try { await writer.close(); } catch (e) { /* Ignore closed stream */ }
     };
 
+    // Format human message to handle optional multimodal array
+    const initialMessage = new HumanMessage({
+      content: image
+        ? [
+            { type: "text", text: message },
+            { type: "image_url", image_url: { url: image } },
+          ]
+        : message,
+    });
+
 // Start graph execution in the background
     (async () => {
       try {
         const eventStream = await multiAgentGraph.streamEvents(
-          { messages: [new HumanMessage(message)] },
+          { messages: [initialMessage] },
           { ...config, version: "v2" }
         );
 

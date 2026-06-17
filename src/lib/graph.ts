@@ -5,7 +5,7 @@ import {
   MemorySaver
 } from "@langchain/langgraph";
 
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, SystemMessage, AIMessage } from "@langchain/core/messages";
 import { z } from "zod";
 import { GraphState, AgentState } from "./schema";
@@ -14,14 +14,14 @@ if (!process.env.LANGCHAIN_API_KEY || process.env.LANGCHAIN_TRACING_V2 !== "true
   process.env.LANGCHAIN_TRACING_V2 = "false";
 }
 
-if (!process.env.GEMINI_API_KEY) {
-  console.error("CRITICAL ERROR: GEMINI_API_KEY is missing from .env.local!");
-  throw new Error("GEMINI_API_KEY is not defined in environment variables.");
+if (!process.env.OPENAI_API_KEY) {
+  console.error("CRITICAL ERROR: OPENAI_API_KEY is missing from .env.local!");
+  throw new Error("OPENAI_API_KEY is not defined in environment variables.");
 }
 
-const llm = new ChatGoogleGenerativeAI({
-  model: "gemini-3.1-flash-lite",
-  apiKey: process.env.GEMINI_API_KEY as string,
+const llm = new ChatOpenAI({
+  model: "gpt-4o",
+  apiKey: process.env.OPENAI_API_KEY as string,
   temperature: 0,
 });
 
@@ -61,12 +61,14 @@ async function clarityNode(state: AgentState) {
   const schema = z.object({
     status: z.enum(["clear", "needs_clarification"]),
     reasoning: z.string(),
-    clarification_prompt: z.string().optional(),
+    clarification_prompt: z.string().describe("The clarification question if status is needs_clarification. Leave as empty string if status is clear."),
   });
 
   const structuredLlm = llm.withStructuredOutput(schema);
   const systemPrompt = new SystemMessage(
-    "You are the Clarity Agent. Analyze context to determine if a specific company or target is explicit. " +
+    "You are the Clarity Agent. Analyze the user's request to determine if it is actionable.\n" +
+    "CRITICAL RULE: You should ALMOST ALWAYS output 'clear'. Only return 'needs_clarification' in extremely rare cases (less than 5% of the time) where the request is complete gibberish or completely lacks any subjects. " +
+    "If the user provides ANY valid topic, company, or concept (e.g., 'Compare OpenAI vs Anthropic', 'explain black holes', 'Apple', 'compare all'), you MUST assume 'clear' and let the research agent handle the general scope. Do NOT ask for specific aspects or drill-downs.\n" +
     "You MUST return ONLY valid JSON without any markdown formatting, backticks, or conversational text."
   );
 
@@ -79,7 +81,7 @@ async function clarityNode(state: AgentState) {
   );
 
   if (response.status === "needs_clarification") {
-    const question = response.clarification_prompt || "Which company are you asking about?";
+    const question = response.clarification_prompt || "Which specific topic or entity are you asking about?";
     return {
       clarity_status: "needs_clarification",
       messages: [new AIMessage(question)],
@@ -95,7 +97,7 @@ async function researchNode(state: AgentState) {
   const querySchema = z.object({ search_query: z.string() });
   const queryLlm = llm.withStructuredOutput(querySchema);
   const queryPrompt = new SystemMessage(
-    "Generate a targeted search query for this company topic. " +
+    "Generate a targeted search query for the user's topic, concept, or document. " +
     "You MUST return ONLY valid JSON without any markdown formatting or extra text."
   );
 
@@ -162,7 +164,7 @@ async function synthesisNode(state: AgentState) {
   const safeHistory = state.messages.filter((msg) => msg._getType() !== "system");
 
   const systemPrompt = new SystemMessage(
-    "You are an elite, professional Business Research Assistant. Your goal is to synthesize research into a clear, highly readable report based on the user's specific query.\n\n" +
+    "You are an elite, professional Research Assistant. Your goal is to synthesize research into a clear, highly readable report based on the user's specific query.\n\n" +
     "CRITICAL FORMATTING INSTRUCTIONS:\n" +
     "1. DYNAMIC STRUCTURE: Organize your response logically based on what the user is asking. Create relevant, contextual headings rather than a fixed template.\n" +
     "2. STRICT MARKDOWN: You MUST use proper Markdown to structure your report.\n" +

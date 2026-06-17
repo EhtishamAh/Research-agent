@@ -30,9 +30,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ label: fallback(agent) });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      console.warn("[label route] GEMINI_API_KEY missing — using fallback");
+      console.warn("[label route] OPENAI_API_KEY missing — using fallback");
       return NextResponse.json({ label: fallback(agent) });
     }
 
@@ -67,30 +67,28 @@ Examples of the style (do NOT copy these, make your own for this query):
 
 Return ONLY the label. Nothing else.`;
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            maxOutputTokens: 30,
-            temperature: 0.85,
-            stopSequences: ["\n"],
-          },
-        }),
-      }
-    );
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 30,
+        temperature: 0.85,
+        stop: ["\n"],
+      }),
+    });
 
     if (!response.ok) {
-      console.error("[label route] Gemini error:", response.status, response.statusText);
+      console.error("[label route] OpenAI error:", response.status, response.statusText);
       return NextResponse.json({ label: fallback(agent) });
     }
 
     const data = await response.json();
-    const raw: string =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const raw: string = data?.choices?.[0]?.message?.content ?? "";
 
     // Strip any accidental quotes, newlines, trailing punctuation
     const label = raw
