@@ -169,6 +169,7 @@ async function synthesisNode(state: AgentState) {
     "   - Use '### ' for all main section headings.\n" +
     "   - Use '* ' for bulleted lists.\n" +
     "   - Use '**' to bold key entities, metrics, or insights.\n" +
+    "   - ALWAYS append a '### References' section at the end containing a bulleted list of all source links provided in the Research Context Data.\n" +
     "3. TONE: Be direct, concise, and highly analytical. Avoid conversational fluff.\n\n" +
     "Use ONLY the provided Research Context Data to answer the user's request. If the data is missing, state what is unknown.\n\n" +
     `Research Context Data:\n${state.context_data}`
